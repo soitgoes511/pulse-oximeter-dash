@@ -24,4 +24,4 @@ The aggregation methods available are mean, median and standard deviation.
 
 ## Screenshot of Specific Oxygen fbProphet Component Plot
 
-![a;t text](dash_pic3.pn)
+![a;t text](dash_pic3.png)
