@@ -1,11 +1,12 @@
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 import dash
 import dash_html_components as html
 import dash_core_components as dcc
 import dash_daq as daq
 import pandas as pd
 import plotly.graph_objects as go
+import pytz
 from dash.dependencies import Input, Output, State
 from dash_extensions import Download
 from dash_extensions.snippets import send_data_frame
@@ -47,7 +48,7 @@ def sanitize_dataframe(input_df):
     input_df["_value"] = input_df["_value"].round(decimals=2)
     input_df["_start"] = pd.to_datetime(input_df["_start"])
     input_df["_start"] = (
-        input_df["_start"].dt.tz_convert("Europe/Oslo").dt.tz_localize(None)
+        input_df["_start"].dt.tz_convert("Europe/Paris").dt.tz_localize(None)
     )
     input_df.drop(columns=["table", "_measurement", "result"], inplace=True)
     df_pivot = input_df.pivot(
@@ -56,13 +57,13 @@ def sanitize_dataframe(input_df):
     df_pivot.reset_index(inplace=True)
     df_pivot["_stop"] = pd.to_datetime(input_df["_stop"])
     df_pivot["_stop"] = (
-        df_pivot["_stop"].dt.tz_convert("Europe/Oslo").dt.tz_localize(None)
+        df_pivot["_stop"].dt.tz_convert("Europe/Paris").dt.tz_localize(None)
     )
 
     return df_pivot
 
 
-def create_current_sats_plot(df_current):
+def create_current_sats_plot(df_current, time_delta):
     """Function creates 2 y-axis plot using plotly. The left
     y-axis (primary) displays the magnitude of the spo2 percentage
     and the right y-axis (secondary) displays the magnitude of
@@ -71,6 +72,7 @@ def create_current_sats_plot(df_current):
     :df input needs changed since it is global but contains data
     :fig is the left side plot of the current sats
     """
+    tz = pytz.timezone("Europe/Paris")
     try:
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         fig.add_trace(
@@ -123,7 +125,10 @@ def create_current_sats_plot(df_current):
             height=450,
             margin=dict(t=50),
             hovermode="x",
-            font=dict(size=20, color="#fff",),
+            font=dict(
+                size=20,
+                color="#fff",
+            ),
             xaxis=dict(
                 zeroline=False,
                 automargin=True,
@@ -131,6 +136,10 @@ def create_current_sats_plot(df_current):
                 linecolor="#737a8d",
                 gridcolor="#737a8d",
                 tickfont=dict(color="#fff"),
+                range=[
+                    (datetime.now(tz) - timedelta(minutes=time_delta)),
+                    (datetime.now(tz)),
+                ],
             ),
             yaxis=dict(
                 automargin=True,
@@ -197,7 +206,10 @@ def make_histogram(df_hist, value):
         margin=dict(t=50),
         hovermode="x",
         bargap=0.1,
-        font=dict(size=20, color="#fff",),
+        font=dict(
+            size=20,
+            color="#fff",
+        ),
         xaxis=dict(
             zeroline=False,
             automargin=True,
@@ -302,7 +314,10 @@ def reconstruct_forecast(raw_data, forecast):
             gridcolor="#171b26",
         ),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        font=dict(size=18, color="#fff",),
+        font=dict(
+            size=18,
+            color="#fff",
+        ),
     )
 
     return fig
@@ -321,14 +336,18 @@ def reconstruct_components(forecast):
     fig = make_subplots(rows=2, cols=1)
     fig.append_trace(
         go.Scatter(
-            x=forecast.index, y=forecast["trend"], line=dict(color="#6fc3df", width=3),
+            x=forecast.index,
+            y=forecast["trend"],
+            line=dict(color="#6fc3df", width=3),
         ),
         row=1,
         col=1,
     )
     fig.append_trace(
         go.Scatter(
-            x=daily_df.index, y=daily_df["daily"], line=dict(color="#6fc3df", width=3),
+            x=daily_df.index,
+            y=daily_df["daily"],
+            line=dict(color="#6fc3df", width=3),
         ),
         row=2,
         col=1,
@@ -380,7 +399,7 @@ def make_forecast(value):
 
     df_forecast["_time"] = pd.to_datetime(df_forecast["_time"])
     df_forecast["_time"] = (
-        df_forecast["_time"].dt.tz_convert("Europe/Oslo").dt.tz_localize(None)
+        df_forecast["_time"].dt.tz_convert("Europe/Paris").dt.tz_localize(None)
     )
     df_forecast.dropna(inplace=True)
 
@@ -587,8 +606,16 @@ app.layout = html.Div(
         build_main(),
         build_footer(),
         # html.Div(id='intermediate-current', style={'display': 'none'}),
-        dcc.Interval(id="interval-component", interval=1000 * 5, n_intervals=0,),
-        dcc.Interval(id="led-interval-component", interval=1000, n_intervals=0,),
+        dcc.Interval(
+            id="interval-component",
+            interval=1000 * 5,
+            n_intervals=0,
+        ),
+        dcc.Interval(
+            id="led-interval-component",
+            interval=1000,
+            n_intervals=0,
+        ),
     ],
     className="grid-container",
 )
@@ -630,9 +657,11 @@ def update_current_plot(dummy, time_value, agg_value):
 
     try:
         df_current_sats["_time"] = pd.to_datetime(df_current_sats["_time"])
-        df_current_sats["_time"] = df_current_sats["_time"].dt.tz_convert("Europe/Oslo")
+        df_current_sats["_time"] = df_current_sats["_time"].dt.tz_convert(
+            "Europe/Paris"
+        )
 
-        fig = create_current_sats_plot(df_current_sats)
+        fig = create_current_sats_plot(df_current_sats, time_value)
     except KeyError:
         fig = go.Figure()
         fig.update_layout(
@@ -653,7 +682,8 @@ def update_current_plot(dummy, time_value, agg_value):
 
 
 @app.callback(
-    Output("plot-forecast", "figure"), [Input("dropdown-forecast", "value")],
+    Output("plot-forecast", "figure"),
+    [Input("dropdown-forecast", "value")],
 )
 def update_forecast(value):
     fig = make_forecast(value)
